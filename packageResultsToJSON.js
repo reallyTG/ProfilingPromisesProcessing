@@ -51,14 +51,6 @@ function getSourceForLocation(loc) {
   // Slicing up to len - 1 b/c we want to get rid of closing ")".
   let indexInFile = loc.slice(pos+1, loc.length - 1);
 
-  let sourceMap = {};
-  // WIP: Attempt to use source map if it exists.
-  if (fs.existsSync(filePath + '.map')) {
-    sourceMap = JSON.parse(fs.readFileSync(filePath + '.map', 'utf-8'));
-    console.log('Source map detected!');
-    console.log(sourceMap);
-  }
-
   // There are three more indices in the name.
   let r1, r2, c1, c2;
   let i = 0;
@@ -196,8 +188,12 @@ function processResFile(file) {
       asyncIdMap[entry.triggerAsyncId].triggers.push(entry.asyncId);
     }
 
+    console.log('-==========================-');
+    console.log(entry.source);
+    console.log(pathTo);
     // Only update stuff that's from the target dir.
     if (entry.source.indexOf(pathTo) == -1) {
+      console.log('no match!');
       continue;
     }
 
