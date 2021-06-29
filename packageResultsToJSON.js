@@ -1,6 +1,27 @@
 
-// Have the Viz open a directory which has all of the results files and source files.
-// Should have the directory structure so that files can be read.
+/*  ~~~ Profiling Promises -- Processor ~~~
+ * 
+ *  > This file is the main driver of this project. You call it as such:
+ *    node packageResultsToJSON.js --resFile results-XYZ --pathTo /path/to/the/tgt/project
+ * 
+ *    * pathTo is important to ensure that the file paths get normalized. results-XYZ will
+ *      contain stuff like /path/to/root/src/file.js, and we need to normalize that to 
+ *      root/src/file.js; in this case, pathTo should be /path/to/ 
+ *      (the trailing / is important ATM)
+ *  
+ *  >> TODO
+ *  [ ] Implement handling of source maps.
+ *      ,, given: source maps are created nearby the files. 
+ *                e.g., /path/to/file.js, /path/to/file.js.map
+ */
+
+/*
+ * Notes about implementing source maps:
+ *  -- looks like the maps files can be generated right alongside the actual files,
+ *     so we might just be able to read them? maybe have a yargs for source maps?
+ *     (the URLs are also at the bottom of the files)
+ *  -- 
+ */ 
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -8,21 +29,20 @@ import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers';
 import { exit } from 'process';
 
-// YARG testing
 const argv = yargs(hideBin(process.argv)).argv
 
 let resFile = argv.resFile;
 let pathTo = argv.pathTo;
 
 if (!resFile || !pathTo) {
-  console.log("ERROR. Usage...");
+  console.log("ERROR. Usage: node packageResultsToJSON.js --resFile {} --pathTo {} ");
   exit(1);
 }
 
 /*
-  Generally useful functions.
+  Read the source for a particular line of code. Note: the LOC contains the file path.
+  WIP: Modifying this to seamlessly use the source map.
 */
-
 function getSourceForLocation(loc) {
   // Parse loc to get the a) file name, and b) location of the relevant bit.
   // Example: (sequential.js:5:9:5:23)
@@ -32,6 +52,14 @@ function getSourceForLocation(loc) {
   let filePath = loc.slice(1, pos);
   // Slicing up to len - 1 b/c we want to get rid of closing ")".
   let indexInFile = loc.slice(pos+1, loc.length - 1);
+
+  let sourceMap = {};
+  // WIP: Attempt to use source map if it exists.
+  if (fs.existsSync(filePath + '.map')) {
+    sourceMap = JSON.parse(fs.readFileSync(filePath + '.map', 'utf-8'));
+    console.log('Source map detected!');
+    console.log(sourceMap);
+  }
 
   // There are three more indices in the name.
   let r1, r2, c1, c2;
@@ -126,7 +154,11 @@ function getSourceForLocation(loc) {
            endCol:    c2 };
 }
 
-// Workhorse function.
+/*
+ * Main function -- read the results file and process it.
+ *          note -- this reads the preprocessed res file, which has been converted
+ *                  to a JSON object.
+ */
 function processResFile(file) {
   let fileContents = {};
   console.log('Processing: ' + path.join(pathTo, file));
@@ -175,25 +207,22 @@ function processResFile(file) {
     if (fs.existsSync(sourcePath)) {
       // Get the line from the file, and include it in the .json as a preview.
       let snippetAndRC = getSourceForLocation(entry.source);
-      entry.line = snippetAndRC.theSource;
+      entry.line      = snippetAndRC.theSource;
       entry.startLine = snippetAndRC.startLine;
       entry.startCol =   snippetAndRC.startCol;
       entry.endLine =     snippetAndRC.endLine;
       entry.endCol =       snippetAndRC.endCol;
 
-      // TODO: add paths to array, cross-ref with user promises later.
-      // let theseContents = fs.readFileSync(sourcePath, 'utf8');
       // Update the source, removing absolute path to the files, making them relative to project root.
       if (sourcePath.indexOf(pathTo) != -1) {
         // Add it to the list of potential sources.
         entry.source = entry.source.substring(1 + pathTo.length, entry.source.length - 1);
-        // fileContents[entry.source.substring(0, entry.source.indexOf(':'))] = theseContents;
         entry.file = entry.source.substring(0, entry.source.indexOf(':'));
         sourceFilePaths.set(entry.file, sourcePath);
       }
 
       // Lastly, this promise is in user code, so we note it's asyncId.
-      // Heuristic: ignore node_modules.
+      // Heuristic: ignore node_modules. (internals:0:0:0:0) are handled separately.
       if (sourcePath.indexOf('node_modules') == -1) {
         userCodeAsyncIds.push(entry.asyncId);
       }
@@ -216,13 +245,17 @@ function processResFile(file) {
     // Add all triggered promises.
     // Note: weirdness here to copy array.
     let promisesToAdd = Array.from(asyncIdMap[aid].triggers);
+    let seen = [];
     while (promisesToAdd.length > 0) {
       let triggered = promisesToAdd.pop();
-      if (asyncIdMap[triggered]) {
-        userProximalPromises.add(asyncIdMap[triggered]);
-        // promisesToAdd = promisesToAdd.concat(asyncIdMap[triggered].triggers);
+      let triggeredPromise = asyncIdMap[triggered];
+      let taid = triggeredPromise.asyncId;
+      if (triggeredPromise && seen.indexOf(taid) == -1) {
+        seen.push(taid);
+        userProximalPromises.add(triggeredPromise);
         // This makes and unmakes a set. Union of two arrays.
-      	promisesToAdd = [...new Set([...asyncIdMap[triggered].triggers, ...promisesToAdd])]; 
+        // This could probably be sped up a bit, if we leverage `seen`.
+      	promisesToAdd = [...new Set([...triggeredPromise.triggers, ...promisesToAdd])]; 
       }
     }
   });
@@ -230,7 +263,7 @@ function processResFile(file) {
   // Post-process, removing (:0:0:0:0) sources, and stuff
   // starting with (internal/
   userProximalPromises.forEach(v => {
-    if (v.source == '(:0:0:0:0)' || 
+    if (v.source == '(:-1:-1:-1:-1)' || 
         (v.source.length >= 10 && 
          v.source.substring(0, 10) == '(internal/')) {
            userProximalPromises.delete(v);
@@ -259,10 +292,16 @@ function processResFile(file) {
   })
 
   // return it
-  // return {promises: contents.promises, files: fileContents};
   return {promises: Object.assign({}, userProximalPromisesArray), files: fileContents};
 }
 
+/*
+ * Take the raw, one-promise-per-line file and convert it into a JSON.
+ *
+ * ! This is poor style, as the file is written out and used later, but I did that b/c
+ *   the code used to work with a JSON object in a file, and the analysis used to produce
+ *   that, but it doesn't anymore. 
+ */
 function preprocessResFile(resFile) {
   let newFileString = '{\n"promises": {\n';
 
@@ -284,7 +323,7 @@ function preprocessResFile(resFile) {
 }
 
 // Pre-process the res file, as now we are moving to a "live analysis" mode which spits promises to a text file.
-// TODO Improve this, but ATM let's just read the file in, and write it out in the correct format.
+// TODO Improve this? ATM let's just read the file in, and write it out in the correct format.
 preprocessResFile(resFile);
 
 let processed = processResFile(resFile + '-tmp');
@@ -292,5 +331,6 @@ let processed = processResFile(resFile + '-tmp');
 // Delete the -tmp file.
 fs.unlinkSync(resFile + '-tmp');
 
-// Write the juicy processed file.
-fs.writeFileSync(path.join(pathTo, 'processed-' + resFile), JSON.stringify(processed, null, 2));
+// Write the jucci processed file.
+if (processed.promises != {})
+  fs.writeFileSync(path.join(pathTo, 'processed-' + resFile), JSON.stringify(processed, null, 2));
