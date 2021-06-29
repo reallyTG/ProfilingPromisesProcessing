@@ -9,10 +9,6 @@
  *      root/src/file.js; in this case, pathTo should be /path/to/ 
  *      (the trailing / is important ATM)
  *  
- *  >> TODO
- *  [ ] Implement handling of source maps.
- *      ,, given: source maps are created nearby the files. 
- *                e.g., /path/to/file.js, /path/to/file.js.map
  */
 
 /*
@@ -35,9 +31,11 @@ let resFile = argv.resFile;
 let pathTo = argv.pathTo;
 
 if (!resFile || !pathTo) {
-  console.log("ERROR. Usage: node packageResultsToJSON.js --resFile {} --pathTo {} ");
+  console.log("ERROR. Usage: node packageResultsToJSON.js --resFile {} --pathTo {} [--antipatterns {}]");
   exit(1);
 }
+
+let antipatternPath = argv.antipatterns;
 
 /*
   Read the source for a particular line of code. Note: the LOC contains the file path.
@@ -291,8 +289,32 @@ function processResFile(file) {
     uid++;
   })
 
+  let antipatternListing = antipatternPath ? processAntipatterns() : [] ;
+
   // return it
-  return {promises: Object.assign({}, userProximalPromisesArray), files: fileContents};
+  return {promises: Object.assign({}, userProximalPromisesArray), 
+          antipatterns: Object.assign({}, antipatternListing),
+          files: fileContents};
+}
+
+function processAntipatterns() {
+  let rawQueryResults = fs.readFileSync(antipatternPath, 'utf-8');
+  let splitRawQueryResults = rawQueryResults.split('\n')  // It's line delimited.
+                             .filter(l => l.length > 0);  // Get rid of last line (empty).
+  splitRawQueryResults.shift();                           // Get rid of first line (header).
+  let listing = [];
+  for (let l of splitRawQueryResults) {
+    let splitLine = l.substring(1, l.length - 1).split(' ');
+    listing.push({
+      patternID:  splitLine[0],
+      file:       splitLine[5].substr(pathTo.length),
+      startLine:  splitLine[1],
+      startCol:   splitLine[2],
+      endLine:    splitLine[3],
+      endCol:     splitLine[4]
+    });
+  }
+  return listing;
 }
 
 /*
@@ -332,5 +354,5 @@ let processed = processResFile(resFile + '-tmp');
 fs.unlinkSync(resFile + '-tmp');
 
 // Write the jucci processed file.
-if (processed.promises != {})
+if (Object.keys(processed.promises).length != 0)
   fs.writeFileSync(path.join(pathTo, 'processed-' + resFile), JSON.stringify(processed, null, 2));
