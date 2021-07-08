@@ -188,12 +188,8 @@ function processResFile(file) {
       asyncIdMap[entry.triggerAsyncId].triggers.push(entry.asyncId);
     }
 
-    console.log('-==========================-');
-    console.log(entry.source);
-    console.log(pathTo);
     // Only update stuff that's from the target dir.
     if (entry.source.indexOf(pathTo) == -1) {
-      console.log('no match!');
       continue;
     }
 
@@ -286,6 +282,13 @@ function processResFile(file) {
   })
 
   let antipatternListing = antipatternPath ? processAntipatterns() : [] ;
+
+  // Add anti-pattern files to the results package.
+  antipatternListing.forEach((ap) => {
+    if (fs.existsSync(ap.file)) {
+      fileContents[ap.file] = fs.readFileSync(ap.file, 'utf-8');
+    }
+  });
 
   // return it
   return {promises: Object.assign({}, userProximalPromisesArray), 
