@@ -300,9 +300,10 @@ function processAntipatterns() {
   let rawQueryResults = fs.readFileSync(antipatternPath, 'utf-8');
   let splitRawQueryResults = rawQueryResults.split('\n')  // It's line delimited.
                              .filter(l => l.length > 0);  // Get rid of last line (empty).
-  splitRawQueryResults.shift();                           // Get rid of first line (header).
   let listing = [];
   for (let l of splitRawQueryResults) {
+    if (l === '"col0"')
+      continue;
     let splitLine = l.substring(1, l.length - 1).split(' ');
     listing.push({
       patternID:  splitLine[0],
