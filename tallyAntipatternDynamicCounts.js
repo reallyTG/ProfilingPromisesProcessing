@@ -2,8 +2,8 @@
 // First, map out antipattern occurences.
 // Then, go through results files and get locations.
 
-const fs = require('fs');
-const yargs = require('yargs');
+import * as fs from 'fs';
+import * as yargs from 'yargs';
 
 const argv = yargs(process.argv).argv
 let antipatternFile = argv.antipatterns;
