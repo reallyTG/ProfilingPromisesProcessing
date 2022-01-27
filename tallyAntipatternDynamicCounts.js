@@ -51,3 +51,5 @@ for (let pID of Object.keys(promises)) {
         }
     }
 }
+
+fs.writeFileSync(outFile, JSON.stringify(dynInstancesOfAntipatterns, null, 2));
