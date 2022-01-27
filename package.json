@@ -1,5 +1,4 @@
 {
-  "type": "module",
   "name": "profilingpromisesprocessing",
   "version": "1.0.0",
   "description": "Tool to package results from asynchooks profiling promises analysis.",
