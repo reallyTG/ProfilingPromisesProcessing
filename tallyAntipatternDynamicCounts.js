@@ -3,7 +3,7 @@
 // Then, go through results files and get locations.
 
 import * as fs from 'fs';
-import * as yargs from 'yargs';
+import yargs from 'yargs';
 
 const argv = yargs(process.argv).argv
 let antipatternFile = argv.antipatterns;
